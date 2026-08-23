@@ -1,14 +1,21 @@
 {
   "name": "opnsense-mcp",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Safety-focused MCP server for the OPNsense API",
   "type": "module",
   "bin": {
     "opnsense-mcp": "dist/index.js"
   },
+  "files": [
+    "dist",
+    "README.md",
+    ".env.example"
+  ],
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
+    "build": "npm run clean && tsc -p tsconfig.json",
     "dev": "tsx src/index.ts",
+    "dev:http": "MCP_TRANSPORT=http tsx src/index.ts",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
@@ -17,10 +24,13 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",
+    "express": "^5.2.1",
+    "express-rate-limit": "^8.6.2",
     "undici": "^7.15.0",
     "zod": "^4.1.5"
   },
   "devDependencies": {
+    "@types/express": "^5.0.6",
     "@types/node": "^24.3.0",
     "tsx": "^4.20.5",
     "typescript": "^5.9.2",

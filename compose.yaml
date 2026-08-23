@@ -1,0 +1,23 @@
+services:
+  opnsense-mcp:
+    build: .
+    restart: unless-stopped
+    environment:
+      OPNSENSE_URL: ${OPNSENSE_URL}
+      OPNSENSE_API_KEY: ${OPNSENSE_API_KEY}
+      OPNSENSE_API_SECRET: ${OPNSENSE_API_SECRET}
+      OPNSENSE_WRITE_MODE: ${OPNSENSE_WRITE_MODE:-disabled}
+      OPNSENSE_TLS_VERIFY: ${OPNSENSE_TLS_VERIFY:-true}
+      MCP_TRANSPORT: http
+      MCP_HOST: 0.0.0.0
+      MCP_PORT: 3000
+      MCP_AUTH_TOKEN: ${MCP_AUTH_TOKEN}
+      MCP_ALLOWED_HOSTS: ${MCP_ALLOWED_HOSTS:-localhost},localhost,127.0.0.1
+    ports:
+      - "127.0.0.1:3000:3000"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s

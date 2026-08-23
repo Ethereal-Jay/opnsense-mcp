@@ -35,7 +35,7 @@ function formatError(error: unknown) {
 }
 
 export function createServer(config: Config, client = new OPNsenseClient(config)): McpServer {
-  const server = new McpServer({ name: "opnsense-mcp", version: "0.1.0" });
+  const server = new McpServer({ name: "opnsense-mcp", version: "0.2.0" });
   const plans = new PlanStore();
 
   server.registerTool(
