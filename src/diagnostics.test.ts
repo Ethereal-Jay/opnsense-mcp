@@ -9,17 +9,75 @@ describe("active diagnostics", () => {
   it("runs a bounded ping and cleans up only its own job", async () => {
     const call = vi.fn(async (request: ApiRequest) => {
       if (request.command === "set") return reply({ result: "ok", uuid: job });
-      if (request.command === "search_jobs") return reply({ rows: [{ id: "other" }, { id: job, received: 3 }] });
+      if (request.command === "search_jobs") return reply({ rows: [{ id: "other" }, { id: job, send: 3, received: 3 }] });
       return reply({ status: "ok" });
     });
     const wait = vi.fn(async () => undefined);
     const result = await new Diagnostics({ call }, wait).ping({ host: "1.1.1.1" });
-    expect(result.result).toEqual({ id: job, received: 3 });
+    expect(result.result).toEqual({ id: job, send: 3, received: 3 });
     expect(wait).toHaveBeenCalledWith(3000);
-    expect(call.mock.calls.map(([request]) => request.command)).toEqual(["set", "start", "stop", "search_jobs", "stop", "remove"]);
+    expect(call.mock.calls.map(([request]) => request.command)).toEqual(["set", "start", "search_jobs", "stop", "remove"]);
     for (const [request] of call.mock.calls) {
       if (["start", "stop", "remove"].includes(request.command)) expect(request.parameters).toEqual([job]);
     }
+  });
+
+  it("waits for the asynchronous live snapshot before stopping the job", async () => {
+    let running = false;
+    let samples = 0;
+    const call = vi.fn(async (request: ApiRequest) => {
+      if (request.command === "set") return reply({ result: "ok", uuid: job });
+      if (request.command === "start") running = true;
+      if (request.command === "stop") running = false;
+      if (request.command === "search_jobs") {
+        expect(running).toBe(true);
+        return reply({ rows: [{ id: job, status: "running", send: ++samples > 1 ? 3 : null, received: samples > 1 ? 3 : null }] });
+      }
+      return reply({ status: "ok" });
+    });
+    const wait = vi.fn(async () => undefined);
+    const result = await new Diagnostics({ call }, wait).ping({ host: "google.com" });
+    expect(result.error).toBeUndefined();
+    expect(result.result).toMatchObject({ send: 3, received: 3 });
+    expect(wait.mock.calls).toEqual([[3000], [250]]);
+    expect(call.mock.calls.map(([r]) => r.command)).toEqual(["set", "start", "search_jobs", "search_jobs", "stop", "remove"]);
+    expect(running).toBe(false);
+  });
+
+  it("reports missing statistics as an error and bounds retries while cleaning up", async () => {
+    const call = vi.fn(async (r: ApiRequest) => {
+      if (r.command === "set") return reply({ result: "ok", uuid: job });
+      if (r.command === "search_jobs") return reply({ rows: [{ id: job, send: null, received: null }] });
+      return reply({ status: "ok" });
+    });
+    const wait = vi.fn(async () => undefined);
+    const result = await new Diagnostics({ call }, wait).ping({ host: "google.com" });
+    expect(result.error).toContain("no ping statistics");
+    expect(call.mock.calls.filter(([r]) => r.command === "search_jobs")).toHaveLength(5);
+    expect(wait.mock.calls).toEqual([[3000], [250], [250], [250], [250]]);
+    expect(call.mock.calls.slice(-2).map(([r]) => r.command)).toEqual(["stop", "remove"]);
+  });
+
+  it("distinguishes actual packet loss from missing statistics", async () => {
+    const call = vi.fn(async (r: ApiRequest) => {
+      if (r.command === "set") return reply({ result: "ok", uuid: job });
+      if (r.command === "search_jobs") return reply({ rows: [{ id: job, send: 3, received: 0, loss: "100.00 %" }] });
+      return reply({ status: "ok" });
+    });
+    const result = await new Diagnostics({ call }, async () => undefined).ping({ host: "google.com" });
+    expect(result.error).toBeUndefined();
+    expect(result.result).toMatchObject({ send: 3, received: 0 });
+  });
+
+  it("surfaces backend ping errors and still cleans up", async () => {
+    const call = vi.fn(async (r: ApiRequest) => {
+      if (r.command === "set") return reply({ result: "ok", uuid: job });
+      if (r.command === "search_jobs") return reply({ rows: [{ id: job, send: null, received: null, last_error: "cannot resolve target" }] });
+      return reply({ status: "ok" });
+    });
+    const result = await new Diagnostics({ call }, async () => undefined).ping({ host: "google.com" });
+    expect(result.error).toContain("cannot resolve target");
+    expect(call.mock.calls.slice(-2).map(([r]) => r.command)).toEqual(["stop", "remove"]);
   });
 
   it("cleans up after an uncertain start and reports cleanup failures", async () => {

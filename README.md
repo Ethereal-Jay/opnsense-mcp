@@ -91,6 +91,8 @@ For example, call `opnsense_ping` with `{"host":"1.1.1.1","durationSeconds":3}` 
 
 **OPNsense permissions:** its ping, traceroute, and portprobe models use `:memory:` storage, but their controllers still call `throwReadOnly()`. Accounts with `System: Deny config write` (`user-config-readonly`) may therefore be denied active diagnostics even though no configuration is persisted. Our write-mode setting does not override that check. A diagnostics-only account needs the specific ping/traceroute/portprobe ACL privileges; avoid granting broad configuration privileges. Use separate monitoring and diagnostic accounts/deployments if needed.
 
+Ping statistics are collected while the job is running: OPNsense's job-list endpoint requests a statistics snapshot, so stopping first would leave counters null. Collection allows up to one additional second for the snapshot to appear. Null counters return an explicit error, not a claim of success or packet loss. The returned job status describes the snapshot before cleanup; stop/remove still run before the tool returns.
+
 Ping cleanup is best-effort when OPNsense becomes unreachable: failures return the job UUID and a warning rather than silently claiming success. Process termination can also leave a temporary job behind (upstream ping has a one-day hard limit). Traceroute and TCP probe limits are controlled by OPNsense; an HTTP timeout does not cancel the backend command. Run probes only against networks you are authorized to diagnose.
 
 ```sh

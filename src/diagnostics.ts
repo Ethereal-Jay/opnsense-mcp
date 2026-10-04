@@ -67,18 +67,31 @@ export class Diagnostics {
       })));
       const job = z.string().uuid().parse(created.uuid);
       const cleanupErrors: string[] = [];
-      let result: unknown;
+      let result: Record<string, unknown> | undefined;
       let failure: unknown;
       try {
         successful(await this.client.call(request("ping", "start", {}, [job])));
         await this.wait(args.durationSeconds * 1000);
-        successful(await this.client.call(request("ping", "stop", {}, [job])));
-        const jobs = successful(await this.client.call(request("ping", "search_jobs", {
-          current: 1, rowCount: 1000, searchPhrase: job, sort: {},
-        })));
-        // The upstream job list may ignore searchPhrase on older revisions.
-        result = Array.isArray(jobs.rows) ? jobs.rows.find((row) => row?.id === job) : undefined;
+        // OPNsense's list action sends SIGINFO to running pings to emit stats.
+        // Stopping first kills the process before it can report. The signal/log
+        // write is asynchronous, so allow up to one extra second for a snapshot.
+        for (let attempt = 0; attempt < 5; attempt++) {
+          if (attempt > 0) await this.wait(250);
+          const jobs = successful(await this.client.call(request("ping", "search_jobs", {
+            current: 1, rowCount: 1000, searchPhrase: job, sort: {},
+          })));
+          // Older revisions may ignore searchPhrase. Never return other jobs.
+          const row: unknown = Array.isArray(jobs.rows) ? jobs.rows.find((row) => row?.id === job) : undefined;
+          if (row && typeof row === "object" && !Array.isArray(row)) result = row as Record<string, unknown>;
+          if (result?.last_error) throw new Error(`OPNsense ping failed: ${String(result.last_error)}`);
+          if (typeof result?.send === "number" && result.send > 0 &&
+              typeof result.received === "number" && result.received >= 0) break;
+        }
         if (!result) throw new Error("Ping job result was not returned by OPNsense");
+        if (typeof result.send !== "number" || result.send <= 0 ||
+            typeof result.received !== "number" || result.received < 0) {
+          throw new Error("OPNsense returned no ping statistics within the collection window; this is not evidence of packet loss or DNS failure");
+        }
       } catch (error) { failure = error; }
       finally {
         for (const command of ["stop", "remove"]) {
