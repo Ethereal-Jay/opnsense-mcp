@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { Config } from "./config.js";
 import { OPNsenseClient } from "./client.js";
 import { PlanStore } from "./plans.js";
+import { Diagnostics, registerDiagnostics } from "./diagnostics.js";
 import { assessRisk } from "./policy.js";
 import {
   firewallLogsRequest,
@@ -34,9 +35,10 @@ function formatError(error: unknown) {
   };
 }
 
-export function createServer(config: Config, client = new OPNsenseClient(config)): McpServer {
+export function createServer(config: Config, client = new OPNsenseClient(config), diagnostics = new Diagnostics(client)): McpServer {
   const server = new McpServer({ name: "opnsense-mcp", version: "0.2.0" });
   const plans = new PlanStore();
+  registerDiagnostics(server, diagnostics);
 
   server.registerTool(
     "opnsense_connection_info",

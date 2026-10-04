@@ -11,6 +11,7 @@ import { rateLimit } from "express-rate-limit";
 import type { Config } from "./config.js";
 import { OPNsenseClient } from "./client.js";
 import { createServer } from "./server.js";
+import { Diagnostics } from "./diagnostics.js";
 
 interface Session {
   server: McpServer;
@@ -44,6 +45,7 @@ export async function startHttpServer(config: Config): Promise<RunningHttpServer
   const { http } = config;
   const app = createMcpExpressApp({ host: http.host, allowedHosts: http.allowedHosts });
   const client = new OPNsenseClient(config);
+  const diagnostics = new Diagnostics(client);
   const sessions = new Map<string, Session>();
 
   app.get("/health", (_req, res) => {
@@ -92,7 +94,7 @@ export async function startHttpServer(config: Config): Promise<RunningHttpServer
           return;
         }
 
-        const server = createServer(config, client);
+        const server = createServer(config, client, diagnostics);
         let transport: StreamableHTTPServerTransport;
         transport = new StreamableHTTPServerTransport({
           sessionIdGenerator: randomUUID,

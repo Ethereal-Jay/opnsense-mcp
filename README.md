@@ -77,6 +77,22 @@ These tools call fixed query endpoints directly. They cannot select mutating sib
 
 ## Setup
 
+### Active diagnostics with writes disabled
+
+`OPNSENSE_WRITE_MODE=disabled` also allows these narrowly scoped tools:
+
+- `opnsense_ping`: IPv4/IPv6 ping, 1–10 seconds, one-second interval, maximum 1400-byte payload. Creates a temporary job, collects statistics, then stops and removes only that job.
+- `opnsense_traceroute`: IPv4/IPv6 UDP or ICMP traceroute.
+- `opnsense_probe_port`: one TCP connectivity test, without fetching remote banners.
+
+These tools generate network traffic and temporary runtime state, so they are marked non-destructive but **not** read-only in MCP annotations. They do not save firewall configuration or enable arbitrary `set`, `start`, `stop`, or `remove` calls through the generic request tool. Only one active diagnostic runs per deployment at a time.
+
+For example, call `opnsense_ping` with `{"host":"1.1.1.1","durationSeconds":3}` while configuration writes remain disabled.
+
+**OPNsense permissions:** its ping, traceroute, and portprobe models use `:memory:` storage, but their controllers still call `throwReadOnly()`. Accounts with `System: Deny config write` (`user-config-readonly`) may therefore be denied active diagnostics even though no configuration is persisted. Our write-mode setting does not override that check. A diagnostics-only account needs the specific ping/traceroute/portprobe ACL privileges; avoid granting broad configuration privileges. Use separate monitoring and diagnostic accounts/deployments if needed.
+
+Ping cleanup is best-effort when OPNsense becomes unreachable: failures return the job UUID and a warning rather than silently claiming success. Process termination can also leave a temporary job behind (upstream ping has a one-day hard limit). Traceroute and TCP probe limits are controlled by OPNsense; an HTTP timeout does not cancel the backend command. Run probes only against networks you are authorized to diagnose.
+
 ```sh
 npm install
 npm run build
